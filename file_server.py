@@ -1,38 +1,52 @@
 import socket
 import os
+import signal
 
-# Create UDP socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-# Bind server address
-s.bind(('127.0.0.1', 8080))
+s.bind(('127.0.0.1', 9000))
 
-print("File Server Started...")
+# Automatically handle completed child processes
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
-# Handle multiple client requests
-while True:
+print("UDP File Server Started...")
+print("Listening on port 9000")
 
-    # Receive filename
-    data, addr = s.recvfrom(1024)
+try:
+    while True:
 
-    filename = data.decode()
+        data, addr = s.recvfrom(1024)
 
-    print("Requested file:", filename)
+        filename = data.decode()
 
-    # Check whether file exists
-    if os.path.exists(filename):
+        pid = os.fork()
 
-        # Read file contents
-        f = open(filename, "rb")
-        content = f.read()
-        f.close()
+        if pid == 0:
 
-        # Send file to client
-        s.sendto(b"OK" + content, addr)
+            child_pid = os.getpid()
 
-        print("File sent successfully")
+            if os.path.isfile(filename):
 
-    else:
-        s.sendto(b"ERROR: File not found", addr)
+                with open(filename, 'r') as f:
+                    content = f.read()
 
-        print("File not found")
+                result = "Handled by Server PID: " + str(child_pid)
+                result = result + "\n\n" + content
+
+            else:
+                result = "Handled by Server PID: " + str(child_pid)
+                result = result + "\nFile Not Found"
+
+            s.sendto(result.encode(), addr)
+
+            s.close()
+            os._exit(0)
+
+        else:
+            print("Request:", filename, "served by child PID:", pid)
+
+except KeyboardInterrupt:
+    print("\nServer Stopped")
+
+finally:
+    s.close()
